@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+import rospy
+from naoqi_bridge_msgs.msg import JointAnglesWithSpeed
+from std_msgs.msg import Bool, String
+
+rospy.init_node("headmovement_node")                                                            # Inizializziamo il nodo headmovement
+p = rospy.Publisher('/pepper_robot/pose/joint_angles', JointAnglesWithSpeed, queue_size=0)      # Effettuiamo la subscibe al topic di NaoQi per inviare una richiesta di movimento alla testa di Pepper
+s = JointAnglesWithSpeed()                                                                      # Definiamo un oggetto msg che verrà utilizzato per inviare la richiesta di cambio posizione alla testa di pepper
+s.joint_names=['HeadPitch', 'HeadYaw']                                                          # Definiamo i joint che saranno sottoposti a movimento
+s.relative=0                                                                                    # Definiamo l'angolo assoluto di movimento
+s.speed=0.2                                                                                     # Definiamo la speed della rotazione
+rate = rospy.Rate(0.2)                                                                          # Definiamo un rate utilizzato per le differenti sleep
+
+#publish on topic to notify the end of a movement
+
+pa = rospy.Publisher('positionACK', Bool, queue_size=2)                                         # Creiamo un topic in cui postare un ACK di fine movimento
+pd = rospy.Publisher('pov', String, queue_size=2)                                               # Creiamo un topic in cui postare la posizione attuale della testa (destra-frontale-sinistra)
+pe = rospy.Publisher('end', Bool, queue_size=2)                                                 # Creiamo un topic in cui postare quando sono stati effettuati tutti i movimenti
+
+#dummy initial position
+s.joint_angles=[0.2, 0]
+p.publish(s)
+rate.sleep()
+
+def look_routine():
+    """
+    Routine di cambio di posizione della testa di pepper
+    """
+    s.joint_angles=[0.2, 1]                                                                     # Definiamo i valori dei singoli joint
+    rospy.loginfo(s.joint_angles)                                                               # Stampiamo un'informazione sull'output di log sulla posizione attuale della testa di pepper
+    p.publish(s)                                                                                # Postiamo sul topic di NaoQi i dati delle nuove posizioni dei joint
+    rate.sleep()                                                                                # ROS si fa una dormita
+    pd.publish("left")                                                                          # Pubblichiamo sul topic /pov la nuova posizione della testa di Pepper
+    pa.publish(True)                                                                            # Pubblichiamo sul topic /positionACK che il movimento della testa è finito
+    rate.sleep()                                                                                # ROS si fa una dormita
+
+    s.joint_angles=[0.2, 0]
+    rospy.loginfo(s.joint_angles)
+    p.publish(s)
+    rate.sleep()
+    pd.publish("center")
+    pa.publish(True)
+    rate.sleep()
+
+    s.joint_angles=[0.2, -1]
+    rospy.loginfo(s.joint_angles)
+    p.publish(s)
+    rate.sleep()
+    pd.publish("right")
+    pa.publish(True)
+    rate.sleep()
+
+    s.joint_angles=[0.2, 0]
+    rospy.loginfo(s.joint_angles)
+    p.publish(s)
+    rate.sleep()
+    pe.publish(True)
+    rate.sleep()
+    
+look_routine()
+
+try:
+    rospy.spin()
+
+except KeyboardInterrupt:
+    print("Shutting down")
+    
+
+    

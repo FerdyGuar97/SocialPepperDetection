@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+import rospy
+from std_msgs.msg import Bool, String
+from pepper_talk.srv import Say
+import collections
+import inflect #python package for plural, singular nouns, ordinals, indefinite articles; convert numbers to words
+
+rospy.init_node("nodoquattro_node")                                         # Inizializziamo il nodo speech
+
+#Create an handle to a ROS service
+try:
+    animated_say = rospy.ServiceProxy('animated_say',Say)
+except rospy.ServiceException as e:
+    rospy.loginfo("Service talk error")
+    pass
+
+speech = ""
+endMovement = False
+endDetection = False
+p = inflect.engine()
+
+def rcv_endMovement(msg):
+    """
+    Callback dal topic /end , riceve un ack quando pepper ha concluso la routine di
+    movimento della testa, può iniziare la routine del parlato se e solo se anche il detector
+    ha concluso le sue operazioni
+    """
+    if(msg):
+        global endMovement
+        global endDetection
+        global speech
+        endMovement = msg
+        if(endDetection):
+            animated_say(speech)
+            endMovement = False
+            endDetection = False
+            speech = ""
+
+
+def rcv_endDetection():
+    """
+    Concluse le tre detection, e la routine di movimento della testa, viene avviata 
+    la speech routine
+    """
+    global endMovement
+    global endDetection
+    global speech
+    if(endMovement):
+        animated_say(speech)
+        endMovement = False
+        endDetection = False
+        speech = ""
+
+#Callback from /detection with classes of detected objects
+
+def rcv_dtcn(msg):
+    """
+    Callback dal topic /detection con le classi degli oggetti detectati per ogni frame
+
+    """
+
+    data = msg.data.split(',')                                                              # Splittiamo il messaggio
+    print('posizione: ' + data[0] + ' - ' + 'oggetti: ' + ' '.join(data[1:]))               # stampiamo un'informazione sul numero di oggetti per ogni area
+    global speech
+    global endDetection
+    
+    if(data[0]=="left"):                                                                    # A seconda del messaggio in arrivo, costruisco la frase 
+        speech += "On my left I see"
+    elif(data[0]=="center"):
+        speech += "In front of me I see"
+    elif(data[0]=="right"):
+        endDetection = True
+        speech += "On my right I see"
+
+    counter = collections.Counter(data[1:])                                                  # Controlliamo quanti oggetti sono stati detectati
+    
+    if(len(counter)==1 and counter['']==1):                                                  # Se non ho oggetti concludo la frase
+        speech += " nothing. "
+
+    elif(len(counter)>1):                                                                    # Se ho oggetti ne controllo il numero e creo la frase utilizzando inflect per generare i plurali
+        for obj, num in list(counter.items())[:-1]:
+            if (num == 1):
+                speech += " a " + obj + ","
+            elif (num == 2):
+                speech += " a couple of " + p.plural(obj) + ","
+            else:
+                speech += str(num) + " " + p.plural(obj) + ","
+
+        obj, num = list(counter.items())[-1]                                                 # Per l'ultimo/ultimi oggetto/i diamo un tocco più gergale alla frase
+        if (num == 1):
+            speech += " and a " + obj + ". "
+        elif (num == 2):
+            speech += " and a couple of " + p.plural(obj) + ". "
+        else:
+            speech += " and " + str(num) + " " + p.plural(obj) + ". "
+
+    else:
+        obj, num = list(counter.items())[-1]                                                  # Se ho una sola detection creo una frase
+        if (num == 1):
+            speech += " a " + obj + ". "
+        elif (num == 2):
+            speech += " a couple of " + p.plural(obj) + ". "
+        else:
+            speech += str(num) + " " + p.plural(obj) + ". "
+    
+    if(endDetection):                                                                          # Concluse tutte e tre le detection avviamo il metodo per la speech routine
+        rcv_endDetection()
+
+
+sd = rospy.Subscriber("detection", String, rcv_dtcn)                                           # Effettuiamo la subscribe al topic /detection ricevendo le detection effettuate dalla rete 
+se = rospy.Subscriber("end", Bool, rcv_endMovement)                                            # Effettuiamo la subscribe al topic /end ricevendo un ack quando la routine di movimento della testa si è conclusa
+
+
+try:
+    rospy.spin()
+
+except KeyboardInterrupt:
+    print("Shutting down")

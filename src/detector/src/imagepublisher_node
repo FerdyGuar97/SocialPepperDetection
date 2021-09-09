@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+import os
+import rospy
+from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
+import ros_numpy
+
+
+rospy.init_node('imagepublisher_node')                                                          # Inizializziamo il nodo imagepublisher
+pub = rospy.Publisher('frame', Image, queue_size=2)                                             # Effettuiamo la subscribe al topic /frame dove postare un frame acquisito dalla camera frontale di pepper
+
+lastImage = None        
+
+def rcv_image(msg):
+    """
+    Callback dal topic /pepper_robot/camera/front/camera/image_raw dove 
+    acquisiamo un frame dalla camera
+    """
+    global lastImage
+    lastImage = msg
+
+def rcv_ack(msg):
+    """
+    Callback dal topic /positionACK dove, ricevuto l'ack dell'avvenuto movimento
+    della testa, acquisisce un frame dalla camera e lo invia su /frame
+    """
+    if(msg):
+        pub.publish(lastImage)
+        rospy.loginfo('positionACK')
+
+si = rospy.Subscriber("/pepper_robot/camera/front/camera/image_raw", Image, rcv_image)            # Effettuiamo la subscribe al topic /pepper_robot/camera/front/camera/image_raw dove acquisiamo un frame dalla camera
+sp = rospy.Subscriber("positionACK", Bool, rcv_ack)                                               # Effettuiamo la subscribe al topic /positionACK dove ricevo informazioni dell'avvenuto movimento della testa di pepper
+
+try:
+    rospy.spin()
+
+except KeyboardInterrupt:
+    print("Shutting down")
+    

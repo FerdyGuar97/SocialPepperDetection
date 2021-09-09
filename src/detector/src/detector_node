@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+import os
+import rospy
+from sensor_msgs.msg import Image
+from detector import Detector
+import ros_numpy # pip3 install git+https://github.com/eric-wieser/ros_numpy
+from std_msgs.msg import String
+from classmap import category_map as classmap # https://gist.github.com/xhlulu/f7735970704b97fd0b72203628c1cc77
+import queue
+
+DET_PATH=os.path.join(os.path.dirname(__file__),'efficientdet_d1_coco17_tpu-32')  # Definiamo il path del detector    
+mydetector = Detector(DET_PATH)                                                   # Carichiamo il detector
+rospy.init_node('detector_node')                                                  # Avviamo il nodo del detector
+rospy.loginfo("Detector ready")                                                   # Stampiamo un'informazione sull'output di log
+pub = rospy.Publisher("detection", String, queue_size=2)                          # Creiamo un topic in cui postare le detection (l'output della rete)
+
+
+
+povs = queue.Queue()                                                              # Buffer in cui salviamo la posizione in cui si trova la testa di pepper
+
+def rcv_dir(msg):
+    """
+    Callback per il topic /pov, aggiorniamo il buffer con 
+    la posizione attuale della testa di pepper
+    """                                                           
+    global povs
+    povs.put(msg.data)                                                            
+
+def rcv_image(msg):
+    """
+    Callback per il topic /frame, che contiene un frame 
+    acquisito dalla front camera di Pepper
+    """
+    names = []
+    image = ros_numpy.numpify(msg)                                                # Creiamo un numpy array del frame
+    detections = mydetector(image)                                                # Chiediamo al detector di effettuare una detection e salviamo i risultati ottenuti
+
+    for clabel in detections['detection_classes']:                                # Aggiungiamo la lista degli oggetti detectati ad una struttura dati
+        names.append(classmap[clabel])
+    
+    names = sorted(names)
+    res = ','.join(names)
+    message = str(povs.get()) + ',' + res
+    pub.publish(message)                                                          # Creiamo un messaggio con le detection e lo inviamo sul topic /detection
+
+si = rospy.Subscriber("frame", Image, rcv_image)                                  # Effettuiamo il subscribe al topic /frame da cui acquisiamo i frame dalla camera di pepper
+sd = rospy.Subscriber("pov", String, rcv_dir)                                     # Effettuiamo il subscribe al topic /pov da cui acquisiamo informazioni sulla posizione della testa di pepper
+
+try:
+    rospy.spin()                                                                  # Rilasciamo il lock
+
+except KeyboardInterrupt:
+    print("Shutting down")
+    
